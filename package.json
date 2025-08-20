@@ -11,6 +11,7 @@
     "test:comprehensive": "node test-comprehensive.js",
     "test:socket": "node test-socket.js",
     "test:upload": "node test-file-upload.js",
+    "test:invite": "node test-invite-management.js",
     "test:all": "node test-runner.js",
     "cleanup": "node cleanup-db.js",
     "cleanup:all": "node cleanup-db.js --all"
