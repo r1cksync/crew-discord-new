@@ -51,10 +51,23 @@ const initSocket = (server) => {
       lastSeen: new Date()
     });
 
+    // Join user to their personal room for friend notifications
+    socket.join(`user:${socket.userId}`);
+
     // Join user to their server rooms
-    const user = await User.findById(socket.userId).populate('servers');
+    const user = await User.findById(socket.userId).populate('servers').populate('friends');
     user.servers.forEach(server => {
       socket.join(`server:${server._id}`);
+    });
+
+    // Notify friends that user came online
+    user.friends.forEach(friend => {
+      io.to(`user:${friend._id}`).emit('friend-status-updated', {
+        friendId: socket.userId,
+        username: socket.user.username,
+        status: 'online',
+        isOnline: true
+      });
     });
 
     // Handle joining specific channel
@@ -257,6 +270,177 @@ const initSocket = (server) => {
       }
     });
 
+    // Handle friend events
+    socket.on('send-friend-request', async (data) => {
+      try {
+        const { targetUserId } = data;
+        
+        if (!targetUserId) {
+          socket.emit('error', { message: 'Target user ID is required' });
+          return;
+        }
+
+        // Find the target user and emit friend request notification
+        const targetUser = await User.findById(targetUserId);
+        if (targetUser) {
+          // Emit to target user if they're online
+          io.to(`user:${targetUserId}`).emit('friend-request-received', {
+            from: {
+              id: socket.userId,
+              username: socket.user.username,
+              avatar: socket.user.avatar
+            },
+            timestamp: new Date()
+          });
+        }
+
+      } catch (error) {
+        console.error('Send friend request socket error:', error);
+        socket.emit('error', { message: 'Failed to send friend request notification' });
+      }
+    });
+
+    socket.on('accept-friend-request', async (data) => {
+      try {
+        const { fromUserId } = data;
+        
+        if (!fromUserId) {
+          socket.emit('error', { message: 'From user ID is required' });
+          return;
+        }
+
+        // Notify the original requester that their request was accepted
+        io.to(`user:${fromUserId}`).emit('friend-request-accepted', {
+          acceptedBy: {
+            id: socket.userId,
+            username: socket.user.username,
+            avatar: socket.user.avatar
+          },
+          timestamp: new Date()
+        });
+
+        // Notify both users about the new friendship
+        const currentUser = await User.findById(socket.userId).select('username avatar status isOnline');
+        const friendUser = await User.findById(fromUserId).select('username avatar status isOnline');
+
+        if (currentUser && friendUser) {
+          // Notify current user
+          socket.emit('friend-added', {
+            friend: {
+              id: friendUser._id,
+              username: friendUser.username,
+              avatar: friendUser.avatar,
+              status: friendUser.status,
+              isOnline: friendUser.isOnline
+            }
+          });
+
+          // Notify the other user
+          io.to(`user:${fromUserId}`).emit('friend-added', {
+            friend: {
+              id: currentUser._id,
+              username: currentUser.username,
+              avatar: currentUser.avatar,
+              status: currentUser.status,
+              isOnline: currentUser.isOnline
+            }
+          });
+        }
+
+      } catch (error) {
+        console.error('Accept friend request socket error:', error);
+        socket.emit('error', { message: 'Failed to process friend request acceptance' });
+      }
+    });
+
+    socket.on('decline-friend-request', async (data) => {
+      try {
+        const { fromUserId } = data;
+        
+        if (!fromUserId) {
+          socket.emit('error', { message: 'From user ID is required' });
+          return;
+        }
+
+        // Notify the original requester that their request was declined
+        io.to(`user:${fromUserId}`).emit('friend-request-declined', {
+          declinedBy: {
+            id: socket.userId,
+            username: socket.user.username
+          },
+          timestamp: new Date()
+        });
+
+      } catch (error) {
+        console.error('Decline friend request socket error:', error);
+        socket.emit('error', { message: 'Failed to process friend request decline' });
+      }
+    });
+
+    socket.on('remove-friend', async (data) => {
+      try {
+        const { friendId } = data;
+        
+        if (!friendId) {
+          socket.emit('error', { message: 'Friend ID is required' });
+          return;
+        }
+
+        // Notify the removed friend
+        io.to(`user:${friendId}`).emit('friend-removed', {
+          removedBy: {
+            id: socket.userId,
+            username: socket.user.username
+          },
+          timestamp: new Date()
+        });
+
+      } catch (error) {
+        console.error('Remove friend socket error:', error);
+        socket.emit('error', { message: 'Failed to process friend removal' });
+      }
+    });
+
+    // Enhanced status updates to notify friends
+    socket.on('update-status', async (data) => {
+      try {
+        const { status } = data;
+        const validStatuses = ['online', 'away', 'busy', 'offline'];
+        
+        if (!validStatuses.includes(status)) {
+          socket.emit('error', { message: 'Invalid status' });
+          return;
+        }
+
+        await User.findByIdAndUpdate(socket.userId, { status });
+
+        // Get user with friends and servers
+        const user = await User.findById(socket.userId).populate('servers').populate('friends');
+        
+        // Emit to all servers the user is in
+        user.servers.forEach(server => {
+          socket.to(`server:${server._id}`).emit('user-status-updated', {
+            userId: socket.userId,
+            status
+          });
+        });
+
+        // Emit to all friends
+        user.friends.forEach(friend => {
+          io.to(`user:${friend._id}`).emit('friend-status-updated', {
+            friendId: socket.userId,
+            username: socket.user.username,
+            status: status,
+            isOnline: status !== 'offline'
+          });
+        });
+
+      } catch (error) {
+        console.error('Update status error:', error);
+        socket.emit('error', { message: 'Failed to update status' });
+      }
+    });
+
     // Handle disconnect
     socket.on('disconnect', async () => {
       console.log(`User ${socket.user.username} disconnected`);
@@ -268,11 +452,23 @@ const initSocket = (server) => {
         lastSeen: new Date()
       });
 
+      // Get user with friends and servers
+      const user = await User.findById(socket.userId).populate('servers').populate('friends');
+      
       // Notify servers about user going offline
-      const user = await User.findById(socket.userId).populate('servers');
       user.servers.forEach(server => {
         socket.to(`server:${server._id}`).emit('user-status-updated', {
           userId: socket.userId,
+          status: 'offline',
+          isOnline: false
+        });
+      });
+
+      // Notify friends about user going offline
+      user.friends.forEach(friend => {
+        io.to(`user:${friend._id}`).emit('friend-status-updated', {
+          friendId: socket.userId,
+          username: socket.user.username,
           status: 'offline',
           isOnline: false
         });

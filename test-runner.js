@@ -71,6 +71,24 @@ async function runTests() {
       command: 'node',
       args: ['test-file-upload.js'],
       description: 'Tests AWS S3 file upload functionality'
+    },
+    {
+      name: 'Invite Management Tests',
+      command: 'node',
+      args: ['test-invite-management.js'],
+      description: 'Tests server invite system and validation'
+    },
+    {
+      name: 'Moderation System Tests',
+      command: 'node',
+      args: ['test-moderation.js'],
+      description: 'Tests kick, ban, timeout, warn, and role management'
+    },
+    {
+      name: 'Friend System Tests',
+      command: 'node',
+      args: ['test-friends.js'],
+      description: 'Tests friend requests, blocking, and social features'
     }
   ];
 

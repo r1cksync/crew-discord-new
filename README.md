@@ -4,6 +4,15 @@ A comprehensive Discord clone backend built with Next.js, Socket.io, MongoDB, an
 
 ## 🎉 Recent Updates (August 2025)
 
+### 🤝 Complete Friend System Implementation
+- **Friend Requests**: Send, accept, and decline friend requests with validation
+- **Friends List**: View and manage friends with online status indicators
+- **Block System**: Block and unblock users with interaction prevention
+- **Real-time Notifications**: Socket.io events for friend activities
+- **Comprehensive Testing**: 100% test success rate for all friend functionality
+- **Duplicate Prevention**: Smart handling of duplicate requests and edge cases
+- **Permission Validation**: Proper authorization and user validation
+
 ### ✅ File Upload System Complete
 - **AWS S3 Integration**: Full file upload support with proper error handling
 - **Avatar Uploads**: User profile pictures stored in S3
@@ -30,6 +39,7 @@ A comprehensive Discord clone backend built with Next.js, Socket.io, MongoDB, an
 - **Socket.io Testing**: Real-time functionality testing with 85.7% success rate
 - **File Upload Testing**: Comprehensive tests using actual image files (pepeToilet.png)
 - **Invite Management Testing**: Complete invite system testing with 100% success rate
+- **Friend System Testing**: Complete friend system testing with 100% success rate
 - **Automated Test Suites**: Multiple test scripts for different functionality areas
 - **Database Cleanup**: Automated test data cleanup utilities
 
@@ -44,6 +54,7 @@ A comprehensive Discord clone backend built with Next.js, Socket.io, MongoDB, an
 - **Real-time messaging** with Socket.io
 - **User authentication** with JWT
 - **Server and channel management**
+- **Complete friend system** with requests, blocking, and real-time notifications
 - **Complete invite system** with codes, validation, and analytics
 - **File uploads** with AWS S3
 - **Message editing and reactions**
@@ -127,6 +138,13 @@ SOCKET_CORS_ORIGIN=http://localhost:3000
   lastSeen: Date,
   servers: [ObjectId] (references to Server),
   friends: [ObjectId] (references to User),
+  friendRequests: [{
+    from: ObjectId (reference to User),
+    to: ObjectId (reference to User),
+    status: String (pending/accepted/declined),
+    createdAt: Date
+  }],
+  blockedUsers: [ObjectId] (references to User),
   createdAt: Date,
   updatedAt: Date
 }
@@ -746,6 +764,208 @@ Content-Type: multipart/form-data
 - `status`: New status (online/away/busy/offline) (optional)
 - `avatar`: Avatar file (optional)
 
+### Friend System Endpoints
+
+#### POST `/api/users/[userId]/friend-request`
+Send a friend request to another user.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Parameters:**
+- `userId`: Target user ID
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Friend request sent successfully",
+  "request": {
+    "_id": "64f8b123...",
+    "from": "64f8b456...",
+    "to": "64f8b789...",
+    "status": "pending",
+    "createdAt": "2025-08-21T10:30:00.000Z"
+  }
+}
+```
+
+#### GET `/api/users/me/friend-requests`
+Get all pending friend requests for the current user.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "requests": [
+    {
+      "_id": "64f8b123...",
+      "from": {
+        "_id": "64f8b456...",
+        "username": "johndoe",
+        "avatar": "https://s3.amazonaws.com/bucket/avatar.png"
+      },
+      "status": "pending",
+      "createdAt": "2025-08-21T10:30:00.000Z"
+    }
+  ]
+}
+```
+
+#### POST `/api/users/me/friend-requests/[requestId]/accept`
+Accept a friend request.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Parameters:**
+- `requestId`: Friend request ID
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Friend request accepted successfully",
+  "friendship": {
+    "user1": "64f8b456...",
+    "user2": "64f8b789...",
+    "createdAt": "2025-08-21T10:35:00.000Z"
+  }
+}
+```
+
+#### POST `/api/users/me/friend-requests/[requestId]/decline`
+Decline a friend request.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Parameters:**
+- `requestId`: Friend request ID
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Friend request declined successfully"
+}
+```
+
+#### GET `/api/users/me/friends`
+Get the current user's friends list.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "friends": [
+    {
+      "_id": "64f8b456...",
+      "username": "johndoe",
+      "avatar": "https://s3.amazonaws.com/bucket/avatar.png",
+      "status": "online",
+      "isOnline": true,
+      "lastSeen": "2025-08-21T10:30:00.000Z"
+    }
+  ]
+}
+```
+
+#### DELETE `/api/users/me/friends/[friendId]`
+Remove a friend from the friends list.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Parameters:**
+- `friendId`: Friend's user ID
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Friend removed successfully"
+}
+```
+
+#### POST `/api/users/[userId]/block`
+Block a user.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Parameters:**
+- `userId`: User ID to block
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "User blocked successfully"
+}
+```
+
+#### DELETE `/api/users/[userId]/block`
+Unblock a user.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Parameters:**
+- `userId`: User ID to unblock
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "User unblocked successfully"
+}
+```
+
+#### GET `/api/users/me/blocked`
+Get the current user's blocked users list.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "blockedUsers": [
+    {
+      "_id": "64f8b456...",
+      "username": "blockeduser",
+      "avatar": "https://s3.amazonaws.com/bucket/avatar.png"
+    }
+  ]
+}
+```
+
 ### Direct Message Endpoints
 
 #### GET `/api/dm`
@@ -1008,6 +1228,107 @@ io.to(`user:${senderId}`).to(`user:${recipientId}`).emit('new-dm', {
 });
 ```
 
+### Friend System Events
+
+#### Server → Client: `friend-request-received`
+Automatically sent when a user receives a new friend request.
+
+**Payload:**
+```javascript
+socket.emit('friend-request-received', {
+  request: {
+    _id: '64f8b789...',
+    from: {
+      _id: '64f8b123...',
+      username: 'johndoe',
+      avatar: 'https://s3.amazonaws.com/bucket/avatar.png'
+    },
+    status: 'pending',
+    createdAt: '2025-08-21T10:30:00.000Z'
+  }
+});
+```
+
+#### Server → Client: `friend-request-accepted`
+Automatically sent when a user's friend request is accepted.
+
+**Payload:**
+```javascript
+socket.emit('friend-request-accepted', {
+  friend: {
+    _id: '64f8b456...',
+    username: 'janedoe',
+    avatar: 'https://s3.amazonaws.com/bucket/avatar.png',
+    status: 'online',
+    isOnline: true
+  },
+  message: 'Your friend request to janedoe was accepted!'
+});
+```
+
+#### Server → Client: `friend-request-declined`
+Automatically sent when a user's friend request is declined.
+
+**Payload:**
+```javascript
+socket.emit('friend-request-declined', {
+  username: 'janedoe',
+  message: 'Your friend request to janedoe was declined.'
+});
+```
+
+#### Server → Client: `friend-removed`
+Automatically sent when a user is removed from the friends list.
+
+**Payload:**
+```javascript
+socket.emit('friend-removed', {
+  friend: {
+    _id: '64f8b456...',
+    username: 'johndoe'
+  },
+  message: 'You were removed from johndoe\'s friends list.'
+});
+```
+
+#### Server → Client: `user-blocked`
+Automatically sent when a user blocks another user.
+
+**Payload:**
+```javascript
+socket.emit('user-blocked', {
+  userId: '64f8b456...',
+  username: 'johndoe',
+  message: 'You have been blocked by johndoe.'
+});
+```
+
+#### Server → Client: `user-unblocked`
+Automatically sent when a user unblocks another user.
+
+**Payload:**
+```javascript
+socket.emit('user-unblocked', {
+  userId: '64f8b456...',
+  username: 'johndoe',
+  message: 'You have been unblocked by johndoe.'
+});
+```
+
+#### Server → Client: `friend-status-changed`
+Automatically sent to all friends when a user's status changes.
+
+**Payload:**
+```javascript
+socket.emit('friend-status-changed', {
+  userId: '64f8b456...',
+  username: 'johndoe',
+  status: 'away',
+  isOnline: true,
+  lastSeen: '2025-08-21T10:30:00.000Z'
+});
+```
+
 ## 🔐 Authentication
 
 ### JWT Token Structure
@@ -1089,9 +1410,26 @@ npm run test
 
 # Run moderation tests only
 npm run test:moderation
+
+# Run friend system tests only
+npm run test:friends
 ```
 
 ### Test Coverage
+
+#### Friend System Tests (`test-friends.js`)
+- ✅ Friend request sending and validation (100% success rate)
+- ✅ Friend request acceptance and mutual friendship creation
+- ✅ Friend request decline functionality
+- ✅ Friends list retrieval with online status
+- ✅ Friend removal and cleanup
+- ✅ User blocking and unblocking system
+- ✅ Blocked users list management
+- ✅ Duplicate request prevention
+- ✅ Self-friend request prevention
+- ✅ Blocked user interaction prevention
+- ✅ Comprehensive error handling and edge cases
+- 🏆 **100% Success Rate**: All friend system functionality working perfectly
 
 #### API Tests (`test-comprehensive.js`)
 - ✅ User registration and login

@@ -13,6 +13,7 @@
     "test:upload": "node test-file-upload.js",
     "test:invite": "node test-invite-management.js",
     "test:moderation": "node test-moderation.js",
+    "test:friends": "node test-friends.js",
     "test:all": "node test-runner.js",
     "cleanup": "node cleanup-db.js",
     "cleanup:all": "node cleanup-db.js --all"
