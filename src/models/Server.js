@@ -50,7 +50,69 @@ const serverSchema = new mongoose.Schema({
   isPublic: {
     type: Boolean,
     default: false
-  }
+  },
+  bannedUsers: [{
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    bannedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    reason: {
+      type: String,
+      default: 'No reason provided'
+    },
+    bannedAt: {
+      type: Date,
+      default: Date.now
+    }
+  }],
+  timeouts: [{
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    timeoutBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    reason: {
+      type: String,
+      default: 'No reason provided'
+    },
+    timeoutUntil: {
+      type: Date,
+      required: true
+    },
+    timeoutAt: {
+      type: Date,
+      default: Date.now
+    }
+  }],
+  warnings: [{
+    id: {
+      type: String,
+      required: true
+    },
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    warnedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    reason: {
+      type: String,
+      required: true
+    },
+    warnedAt: {
+      type: Date,
+      default: Date.now
+    }
+  }]
 }, {
   timestamps: true
 });

@@ -12,6 +12,7 @@
     "test:socket": "node test-socket.js",
     "test:upload": "node test-file-upload.js",
     "test:invite": "node test-invite-management.js",
+    "test:moderation": "node test-moderation.js",
     "test:all": "node test-runner.js",
     "cleanup": "node cleanup-db.js",
     "cleanup:all": "node cleanup-db.js --all"
