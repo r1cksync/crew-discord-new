@@ -68,6 +68,7 @@ export async function POST(request, { params }) {
     });
 
     return Response.json({
+      success: true,
       message: 'Successfully joined server',
       server: {
         id: server._id,

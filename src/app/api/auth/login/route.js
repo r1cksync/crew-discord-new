@@ -12,7 +12,7 @@ export async function POST(request) {
     // Validate input
     if (!email || !password) {
       return Response.json(
-        { error: 'Email and password are required' },
+        { success: false, error: 'Email and password are required' },
         { status: 400 }
       );
     }
@@ -21,7 +21,7 @@ export async function POST(request) {
     const user = await User.findOne({ email });
     if (!user) {
       return Response.json(
-        { error: 'Invalid credentials' },
+        { success: false, error: 'Invalid credentials' },
         { status: 401 }
       );
     }
@@ -30,7 +30,7 @@ export async function POST(request) {
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
       return Response.json(
-        { error: 'Invalid credentials' },
+        { success: false, error: 'Invalid credentials' },
         { status: 401 }
       );
     }
@@ -57,6 +57,7 @@ export async function POST(request) {
     };
 
     return Response.json({
+      success: true,
       message: 'Login successful',
       user: userResponse,
       token
@@ -65,7 +66,7 @@ export async function POST(request) {
   } catch (error) {
     console.error('Login error:', error);
     return Response.json(
-      { error: 'Internal server error' },
+      { success: false, error: 'Internal server error' },
       { status: 500 }
     );
   }

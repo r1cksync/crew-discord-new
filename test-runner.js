@@ -65,6 +65,12 @@ async function runTests() {
       command: 'node',
       args: ['test-socket.js'],
       description: 'Tests real-time messaging and Socket.io events'
+    },
+    {
+      name: 'File Upload Tests',
+      command: 'node',
+      args: ['test-file-upload.js'],
+      description: 'Tests AWS S3 file upload functionality'
     }
   ];
 

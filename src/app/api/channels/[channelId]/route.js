@@ -26,7 +26,7 @@ export async function GET(request, { params }) {
       );
     }
 
-    const { channelId } = params;
+    const { channelId } = await params;
 
     const channel = await Channel.findById(channelId)
       .populate('server', 'name members')
@@ -53,6 +53,7 @@ export async function GET(request, { params }) {
     }
 
     return Response.json({
+      success: true,
       channel
     });
 
@@ -88,7 +89,7 @@ export async function PUT(request, { params }) {
       );
     }
 
-    const { channelId } = params;
+    const { channelId } = await params;
     const { name, description, topic } = await request.json();
 
     const channel = await Channel.findById(channelId);
@@ -116,6 +117,7 @@ export async function PUT(request, { params }) {
     await channel.save();
 
     return Response.json({
+      success: true,
       message: 'Channel updated successfully',
       channel
     });
@@ -152,7 +154,7 @@ export async function DELETE(request, { params }) {
       );
     }
 
-    const { channelId } = params;
+    const { channelId } = await params;
 
     const channel = await Channel.findById(channelId);
     if (!channel) {
@@ -180,6 +182,7 @@ export async function DELETE(request, { params }) {
     await Channel.findByIdAndDelete(channelId);
 
     return Response.json({
+      success: true,
       message: 'Channel deleted successfully'
     });
 

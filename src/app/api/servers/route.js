@@ -15,7 +15,7 @@ export async function GET(request) {
 
     if (!token) {
       return Response.json(
-        { error: 'Access token is required' },
+        { success: false, error: 'Access token is required' },
         { status: 401 }
       );
     }
@@ -23,7 +23,7 @@ export async function GET(request) {
     const decoded = verifyToken(token);
     if (!decoded) {
       return Response.json(
-        { error: 'Invalid token' },
+        { success: false, error: 'Invalid token' },
         { status: 401 }
       );
     }
@@ -38,19 +38,20 @@ export async function GET(request) {
 
     if (!user) {
       return Response.json(
-        { error: 'User not found' },
+        { success: false, error: 'User not found' },
         { status: 404 }
       );
     }
 
     return Response.json({
+      success: true,
       servers: user.servers
     });
 
   } catch (error) {
     console.error('Get servers error:', error);
     return Response.json(
-      { error: 'Internal server error' },
+      { success: false, error: 'Internal server error' },
       { status: 500 }
     );
   }
@@ -66,7 +67,7 @@ export async function POST(request) {
 
     if (!token) {
       return Response.json(
-        { error: 'Access token is required' },
+        { success: false, error: 'Access token is required' },
         { status: 401 }
       );
     }
@@ -74,7 +75,7 @@ export async function POST(request) {
     const decoded = verifyToken(token);
     if (!decoded) {
       return Response.json(
-        { error: 'Invalid token' },
+        { success: false, error: 'Invalid token' },
         { status: 401 }
       );
     }
@@ -83,7 +84,7 @@ export async function POST(request) {
 
     if (!name) {
       return Response.json(
-        { error: 'Server name is required' },
+        { success: false, error: 'Server name is required' },
         { status: 400 }
       );
     }
@@ -167,6 +168,7 @@ export async function POST(request) {
       .populate('members.user', 'username avatar status isOnline');
 
     return Response.json({
+      success: true,
       message: 'Server created successfully',
       server: populatedServer
     }, { status: 201 });
@@ -174,7 +176,7 @@ export async function POST(request) {
   } catch (error) {
     console.error('Create server error:', error);
     return Response.json(
-      { error: 'Internal server error' },
+      { success: false, error: 'Internal server error' },
       { status: 500 }
     );
   }

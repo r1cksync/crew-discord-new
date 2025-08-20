@@ -12,7 +12,7 @@ export async function POST(request) {
     // Validate input
     if (!email || !password || !username) {
       return Response.json(
-        { error: 'Email, password, and username are required' },
+        { success: false, error: 'Email, password, and username are required' },
         { status: 400 }
       );
     }
@@ -24,7 +24,7 @@ export async function POST(request) {
 
     if (existingUser) {
       return Response.json(
-        { error: 'User with this email or username already exists' },
+        { success: false, error: 'User with this email or username already exists' },
         { status: 400 }
       );
     }
@@ -56,6 +56,7 @@ export async function POST(request) {
     };
 
     return Response.json({
+      success: true,
       message: 'User created successfully',
       user: userResponse,
       token
@@ -64,7 +65,7 @@ export async function POST(request) {
   } catch (error) {
     console.error('Registration error:', error);
     return Response.json(
-      { error: 'Internal server error' },
+      { success: false, error: 'Internal server error' },
       { status: 500 }
     );
   }

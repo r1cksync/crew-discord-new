@@ -10,6 +10,7 @@
     "test": "node test-backend.js",
     "test:comprehensive": "node test-comprehensive.js",
     "test:socket": "node test-socket.js",
+    "test:upload": "node test-file-upload.js",
     "test:all": "node test-runner.js",
     "cleanup": "node cleanup-db.js",
     "cleanup:all": "node cleanup-db.js --all"
@@ -27,7 +28,8 @@
     "next": "15.5.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",
-    "socket.io": "^4.8.1"
+    "socket.io": "^4.8.1",
+    "uuid": "^11.1.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",

@@ -11,7 +11,7 @@ export async function POST(request) {
 
     if (!token) {
       return Response.json(
-        { error: 'Access token is required' },
+        { success: false, error: 'Access token is required' },
         { status: 401 }
       );
     }
@@ -19,7 +19,7 @@ export async function POST(request) {
     const decoded = verifyToken(token);
     if (!decoded) {
       return Response.json(
-        { error: 'Invalid token' },
+        { success: false, error: 'Invalid token' },
         { status: 401 }
       );
     }
@@ -32,13 +32,14 @@ export async function POST(request) {
     });
 
     return Response.json({
+      success: true,
       message: 'Logout successful'
     });
 
   } catch (error) {
     console.error('Logout error:', error);
     return Response.json(
-      { error: 'Internal server error' },
+      { success: false, error: 'Internal server error' },
       { status: 500 }
     );
   }
