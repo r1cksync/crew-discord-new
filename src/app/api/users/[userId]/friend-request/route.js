@@ -1,6 +1,7 @@
 import User from '../../../../../models/User';
 import { verifyToken, extractTokenFromHeader } from '../../../../../lib/jwt';
 import connectDB from '../../../../../lib/mongodb';
+import { getIO } from '../../../../../socket';
 
 // POST - Send friend request to a user
 export async function POST(request, { params }) {
@@ -102,6 +103,42 @@ export async function POST(request, { params }) {
       await targetUser.save();
       await requestingUser.save();
 
+      // Emit real-time notifications for automatic friendship
+      try {
+        const io = getIO();
+        
+        if (io) {
+          // Notify both users about the new friendship
+          io.to(`user:${userId}`).emit('friend-request-accepted', {
+            friend: {
+              _id: decoded.userId,
+              id: decoded.userId,
+              username: requestingUser.username,
+              avatar: requestingUser.avatar,
+              status: requestingUser.status || 'offline',
+              isOnline: requestingUser.isOnline || false
+            }
+          });
+
+          io.to(`user:${decoded.userId}`).emit('friend-request-accepted', {
+            friend: {
+              _id: userId,
+              id: userId,
+              username: targetUser.username,
+              avatar: targetUser.avatar,
+              status: targetUser.status || 'offline',
+              isOnline: targetUser.isOnline || false
+            }
+          });
+          
+          console.log(`✅ Automatic friendship notifications sent`);
+        } else {
+          console.log(`⚠️ Socket.io not initialized, friendship notifications not sent`);
+        }
+      } catch (socketError) {
+        console.log(`⚠️ Socket emission failed:`, socketError.message);
+      }
+
       return Response.json({
         success: true,
         message: 'Friend request accepted automatically',
@@ -128,17 +165,40 @@ export async function POST(request, { params }) {
     await targetUser.populate('friendRequests.from', 'username avatar');
     const newRequest = targetUser.friendRequests[targetUser.friendRequests.length - 1];
 
+    // Emit real-time notification to target user
+    try {
+      const io = getIO();
+      if (io) {
+        io.to(`user:${userId}`).emit('friend-request-received', {
+          request: {
+            _id: newRequest._id,
+            from: {
+              _id: newRequest.from._id,
+              id: newRequest.from._id,
+              username: newRequest.from.username,
+              avatar: newRequest.from.avatar
+            },
+            to: userId,
+            status: 'pending',
+            createdAt: newRequest.createdAt
+          }
+        });
+        console.log(`✅ Friend request notification sent to user:${userId}`);
+      } else {
+        console.log(`⚠️ Socket.io not initialized, notification not sent`);
+      }
+    } catch (socketError) {
+      console.log(`⚠️ Socket emission failed (user might be offline):`, socketError.message);
+    }
+
     return Response.json({
       success: true,
       message: 'Friend request sent successfully',
-      friendRequest: {
-        id: newRequest._id,
-        from: {
-          id: newRequest.from._id,
-          username: newRequest.from.username,
-          avatar: newRequest.from.avatar
-        },
-        status: newRequest.status,
+      request: {
+        _id: newRequest._id,
+        from: decoded.userId,
+        to: userId,
+        status: 'pending',
         createdAt: newRequest.createdAt
       }
     });

@@ -6,6 +6,11 @@ const connectDB = require('./lib/mongodb');
 
 let io;
 
+// Store instance globally for Next.js
+if (typeof global !== 'undefined') {
+  global._socketIO = global._socketIO || null;
+}
+
 const initSocket = (server) => {
   io = new Server(server, {
     cors: {
@@ -13,6 +18,11 @@ const initSocket = (server) => {
       methods: ["GET", "POST"]
     }
   });
+
+  // Store globally for Next.js API routes
+  if (typeof global !== 'undefined') {
+    global._socketIO = io;
+  }
 
   // Middleware for authentication
   io.use(async (socket, next) => {
@@ -480,8 +490,15 @@ const initSocket = (server) => {
 };
 
 const getIO = () => {
+  // Try to get from global first (Next.js API routes)
+  if (typeof global !== 'undefined' && global._socketIO) {
+    return global._socketIO;
+  }
+  
+  // Fallback to local variable
   if (!io) {
-    throw new Error('Socket.io not initialized');
+    console.warn('⚠️ Socket.io not initialized yet, skipping emission');
+    return null;
   }
   return io;
 };

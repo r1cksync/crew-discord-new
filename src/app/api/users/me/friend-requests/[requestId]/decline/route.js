@@ -1,6 +1,7 @@
-const User = require('../../../../../../../models/User');
-const { verifyToken, extractTokenFromHeader } = require('../../../../../../../lib/jwt');
-const connectDB = require('../../../../../../../lib/mongodb');
+import jwt from 'jsonwebtoken';
+import User from '../../../../../../../models/User.js';
+import { getIO } from '../../../../../../../socket.js';
+import { connectDB } from '../../../../../../../lib/mongodb.js';
 
 // POST - Decline friend request
 export async function POST(request, { params }) {
@@ -8,7 +9,7 @@ export async function POST(request, { params }) {
     await connectDB();
     
     const authHeader = request.headers.get('authorization');
-    const token = extractTokenFromHeader(authHeader);
+    const token = authHeader?.replace('Bearer ', '');
 
     if (!token) {
       return Response.json(
@@ -17,8 +18,10 @@ export async function POST(request, { params }) {
       );
     }
 
-    const decoded = verifyToken(token);
-    if (!decoded) {
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (error) {
       return Response.json(
         { success: false, error: 'Invalid token' },
         { status: 401 }
@@ -57,6 +60,28 @@ export async function POST(request, { params }) {
     // Decline the friend request by removing it
     user.friendRequests.pull(requestId);
     await user.save();
+
+    // Emit real-time event to notify the original sender that their request was declined
+    try {
+      const io = getIO();
+      
+      if (io && requestSender) {
+        io.to(requestSender._id.toString()).emit('friend-request-declined', {
+          decliner: {
+            id: user._id,
+            username: user.username,
+            avatar: user.avatar
+          },
+          message: `${user.username} declined your friend request.`
+        });
+        console.log(`✅ Friend request decline notification sent`);
+      } else if (!io) {
+        console.log(`⚠️ Socket.io not initialized, decline notification not sent`);
+      }
+    } catch (socketError) {
+      console.error('Socket emission error:', socketError);
+      // Don't fail the request if socket emission fails
+    }
 
     return Response.json({
       success: true,

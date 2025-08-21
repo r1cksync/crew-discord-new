@@ -27,8 +27,7 @@ export async function GET(request) {
     }
 
     const user = await User.findById(decoded.userId)
-      .select('-password')
-      .populate('servers', 'name description icon');
+      .select('-password');
 
     if (!user) {
       return Response.json(

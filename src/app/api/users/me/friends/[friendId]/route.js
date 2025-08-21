@@ -1,6 +1,23 @@
-import User from '../../../../../../models/User';
-import { verifyToken, extractTokenFromHeader } from '../../../../../../lib/jwt';
-import connectDB from '../../../../../../lib/mongodb';
+import User from '../../../../../../models/User.js';
+import jwt from 'jsonwebtoken';
+import connectDB from '../../../../../../lib/mongodb.js';
+import { getIO } from '../../../../../../socket.js';
+
+// Helper functions
+function extractTokenFromHeader(authHeader) {
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return null;
+  }
+  return authHeader.slice(7);
+}
+
+function verifyToken(token) {
+  try {
+    return jwt.verify(token, process.env.JWT_SECRET);
+  } catch (error) {
+    return null;
+  }
+}
 
 // GET - Get user's friends list
 export async function GET(request) {
@@ -8,7 +25,7 @@ export async function GET(request) {
     await connectDB();
     
     const authHeader = request.headers.get('authorization');
-    const token = extractTokenFromHeader(authHeader);
+    const token = authHeader?.replace('Bearer ', '');
 
     if (!token) {
       return Response.json(
@@ -17,8 +34,10 @@ export async function GET(request) {
       );
     }
 
-    const decoded = verifyToken(token);
-    if (!decoded) {
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (error) {
       return Response.json(
         { success: false, error: 'Invalid token' },
         { status: 401 }
@@ -68,7 +87,7 @@ export async function DELETE(request, { params }) {
     await connectDB();
     
     const authHeader = request.headers.get('authorization');
-    const token = extractTokenFromHeader(authHeader);
+    const token = authHeader?.replace('Bearer ', '');
 
     if (!token) {
       return Response.json(
@@ -77,8 +96,10 @@ export async function DELETE(request, { params }) {
       );
     }
 
-    const decoded = verifyToken(token);
-    if (!decoded) {
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (error) {
       return Response.json(
         { success: false, error: 'Invalid token' },
         { status: 401 }
@@ -113,6 +134,40 @@ export async function DELETE(request, { params }) {
 
     await user.save();
     await friend.save();
+
+    // Emit real-time events to both users
+    try {
+      const io = getIO();
+      
+      if (io) {
+        // Notify the removed friend
+        io.to(friend._id.toString()).emit('friend-removed', {
+          remover: {
+            id: user._id,
+            username: user.username,
+            avatar: user.avatar
+          },
+          message: `${user.username} removed you from their friends list`
+        });
+
+        // Notify the current user (for consistency)
+        io.to(user._id.toString()).emit('friend-removed-by-you', {
+          friend: {
+            id: friend._id,
+            username: friend.username,
+            avatar: friend.avatar
+          },
+          message: `You removed ${friend.username} from your friends list`
+        });
+
+        console.log(`✅ Friend removal notifications sent`);
+      } else {
+        console.log(`⚠️ Socket.io not initialized, removal notifications not sent`);
+      }
+    } catch (socketError) {
+      console.error('Socket emission error:', socketError);
+      // Don't fail the request if socket emission fails
+    }
 
     return Response.json({
       success: true,

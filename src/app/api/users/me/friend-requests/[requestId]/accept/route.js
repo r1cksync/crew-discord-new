@@ -1,6 +1,7 @@
-const User = require('../../../../../../../models/User');
-const { verifyToken, extractTokenFromHeader } = require('../../../../../../../lib/jwt');
-const connectDB = require('../../../../../../../lib/mongodb');
+import jwt from 'jsonwebtoken';
+import User from '../../../../../../../models/User.js';
+import { getIO } from '../../../../../../../socket.js';
+import { connectDB } from '../../../../../../../lib/mongodb.js';
 
 // POST - Accept friend request
 export async function POST(request, { params }) {
@@ -91,6 +92,44 @@ export async function POST(request, { params }) {
     // Save both users
     await user.save();
     await requestSender.save();
+
+    // Emit real-time events for both users
+    try {
+      const io = getIO();
+      
+      if (io) {
+        // Notify the original sender that their request was accepted
+        io.to(requestSender._id.toString()).emit('friend-request-accepted', {
+          friend: {
+            id: user._id,
+            username: user.username,
+            avatar: user.avatar,
+            status: user.status,
+            isOnline: user.isOnline
+          },
+          message: `${user.username} accepted your friend request!`
+        });
+
+        // Notify the current user (accepter) that they have a new friend
+        io.to(user._id.toString()).emit('friend-added', {
+          friend: {
+            id: requestSender._id,
+            username: requestSender.username,
+            avatar: requestSender.avatar,
+            status: requestSender.status,
+            isOnline: requestSender.isOnline
+          },
+          message: `You are now friends with ${requestSender.username}!`
+        });
+
+        console.log(`✅ Friend request acceptance notifications sent`);
+      } else {
+        console.log(`⚠️ Socket.io not initialized, acceptance notifications not sent`);
+      }
+    } catch (socketError) {
+      console.error('Socket emission error:', socketError);
+      // Don't fail the request if socket emission fails
+    }
 
     return Response.json({
       success: true,
