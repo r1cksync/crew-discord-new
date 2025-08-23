@@ -880,41 +880,562 @@ const initSocket = (server) => {
     socket.on('disconnect', async () => {
       console.log(`User ${socket.user.username} disconnected`);
       
-      // Update user status to offline
-      await User.findByIdAndUpdate(socket.userId, {
-        isOnline: false,
-        status: 'offline',
-        lastSeen: new Date()
-      });
-
-      // Get user with friends and servers
-      const user = await User.findById(socket.userId).populate('servers').populate('friends');
-      
-      // Notify servers about user going offline
-      user.servers.forEach(server => {
-        socket.to(`server:${server._id}`).emit('user-status-updated', {
-          userId: socket.userId,
+      try {
+        // Update user status to offline
+        await User.findByIdAndUpdate(socket.userId, {
+          isOnline: false,
           status: 'offline',
-          isOnline: false
+          lastSeen: new Date()
         });
-      });
 
-      // Notify friends about user going offline
-      user.friends.forEach(friend => {
-        io.to(`user:${friend._id}`).emit('friend-status-updated', {
-          friendId: socket.userId,
-          username: socket.user.username,
-          status: 'offline',
-          isOnline: false
+        // Get user with friends and servers
+        const user = await User.findById(socket.userId).populate('servers').populate('friends');
+        
+        // Handle voice session cleanup
+        await handleVoiceDisconnect(socket.userId, io);
+        
+        // Notify servers about user going offline
+        user.servers.forEach(server => {
+          socket.to(`server:${server._id}`).emit('user-status-updated', {
+            userId: socket.userId,
+            status: 'offline',
+            isOnline: false
+          });
         });
-      });
+
+        // Notify friends about user going offline
+        user.friends.forEach(friend => {
+          io.to(`user:${friend._id}`).emit('friend-status-updated', {
+            friendId: socket.userId,
+            username: socket.user.username,
+            status: 'offline',
+            isOnline: false
+          });
+        });
+
+      } catch (error) {
+        console.error('Disconnect error:', error);
+      }
     });
+
+    // Voice/Video Events
+    console.log('🔧 Registering voice/video handlers...');
+
+    // Join voice channel
+    socket.on('join-voice-channel', async (data) => {
+      console.log(`🎤 JOIN-VOICE-CHANNEL event received from ${socket.user.username}:`, data);
+      try {
+        const { channelId, peerId, isVideoEnabled = false } = data;
+
+        if (!channelId || !peerId) {
+          socket.emit('error', { message: 'Channel ID and Peer ID are required' });
+          return;
+        }
+
+        await connectDB();
+        const VoiceSession = require('./models/VoiceSession');
+        const Channel = require('./models/Channel');
+
+        // Verify channel exists and is a voice channel
+        const channel = await Channel.findById(channelId).populate('server');
+        if (!channel || channel.type !== 'voice') {
+          socket.emit('error', { message: 'Invalid voice channel' });
+          return;
+        }
+
+        // Find or create voice session
+        let session = await VoiceSession.findOne({
+          channel: channelId,
+          isActive: true
+        });
+
+        if (!session) {
+          session = new VoiceSession({
+            sessionId: `channel_${channelId}_${Date.now()}`,
+            type: 'channel',
+            channel: channelId,
+            server: channel.server._id,
+            createdBy: socket.userId,
+            activeUsers: []
+          });
+        }
+
+        // Add user to session
+        await session.addUser(socket.userId, socket.id, peerId);
+        
+        // Join voice room
+        socket.join(`voice:${session.sessionId}`);
+
+        // Notify server members
+        socket.to(`server:${channel.server._id}`).emit('voice-user-joined', {
+          sessionId: session.sessionId,
+          channelId: channelId,
+          user: {
+            id: socket.userId,
+            username: socket.user.username,
+            avatar: socket.user.avatar,
+            isVideoEnabled: isVideoEnabled
+          },
+          timestamp: new Date()
+        });
+
+        // Send current participants to new user
+        const currentParticipants = session.activeUsers
+          .filter(u => u.user.toString() !== socket.userId)
+          .map(u => ({
+            userId: u.user.toString(),
+            peerId: u.peerId,
+            isMuted: u.isMuted,
+            isVideoEnabled: u.isVideoEnabled,
+            isScreenSharing: u.isScreenSharing
+          }));
+
+        socket.emit('voice-session-joined', {
+          sessionId: session.sessionId,
+          participants: currentParticipants
+        });
+
+        console.log(`✅ User ${socket.user.username} joined voice channel ${channelId}`);
+
+      } catch (error) {
+        console.error('Join voice channel error:', error);
+        socket.emit('error', { message: 'Failed to join voice channel' });
+      }
+    });
+
+    // Leave voice channel
+    socket.on('leave-voice-channel', async (data) => {
+      console.log(`🎤 LEAVE-VOICE-CHANNEL event received from ${socket.user.username}:`, data);
+      try {
+        const { sessionId } = data;
+
+        if (!sessionId) {
+          socket.emit('error', { message: 'Session ID is required' });
+          return;
+        }
+
+        await connectDB();
+        const VoiceSession = require('./models/VoiceSession');
+
+        const session = await VoiceSession.findOne({ sessionId });
+        if (!session) {
+          socket.emit('error', { message: 'Voice session not found' });
+          return;
+        }
+
+        // Remove user from session
+        await session.removeUser(socket.userId);
+        
+        // Leave voice room
+        socket.leave(`voice:${sessionId}`);
+
+        // Notify other participants
+        socket.to(`voice:${sessionId}`).emit('voice-user-left', {
+          sessionId: sessionId,
+          userId: socket.userId,
+          username: socket.user.username,
+          timestamp: new Date()
+        });
+
+        // If it's a channel session, notify server
+        if (session.type === 'channel') {
+          socket.to(`server:${session.server}`).emit('voice-user-left', {
+            sessionId: sessionId,
+            channelId: session.channel,
+            userId: socket.userId,
+            username: socket.user.username,
+            timestamp: new Date()
+          });
+        }
+
+        console.log(`✅ User ${socket.user.username} left voice session ${sessionId}`);
+
+      } catch (error) {
+        console.error('Leave voice channel error:', error);
+        socket.emit('error', { message: 'Failed to leave voice channel' });
+      }
+    });
+
+    // Update voice state (mute, video, screen share)
+    socket.on('update-voice-state', async (data) => {
+      console.log(`🎤 UPDATE-VOICE-STATE event received from ${socket.user.username}:`, data);
+      try {
+        const { sessionId, isMuted, isDeafened, isVideoEnabled, isScreenSharing } = data;
+
+        if (!sessionId) {
+          socket.emit('error', { message: 'Session ID is required' });
+          return;
+        }
+
+        await connectDB();
+        const VoiceSession = require('./models/VoiceSession');
+
+        const session = await VoiceSession.findOne({ sessionId });
+        if (!session) {
+          socket.emit('error', { message: 'Voice session not found' });
+          return;
+        }
+
+        // Update user state
+        const updates = {};
+        if (typeof isMuted === 'boolean') updates.isMuted = isMuted;
+        if (typeof isDeafened === 'boolean') updates.isDeafened = isDeafened;
+        if (typeof isVideoEnabled === 'boolean') updates.isVideoEnabled = isVideoEnabled;
+        if (typeof isScreenSharing === 'boolean') updates.isScreenSharing = isScreenSharing;
+
+        await session.updateUserState(socket.userId, updates);
+
+        // Notify other participants
+        const stateUpdate = {
+          sessionId: sessionId,
+          userId: socket.userId,
+          username: socket.user.username,
+          ...updates,
+          timestamp: new Date()
+        };
+
+        socket.to(`voice:${sessionId}`).emit('voice-state-update', stateUpdate);
+
+        // If it's a channel session, also notify server
+        if (session.type === 'channel') {
+          socket.to(`server:${session.server}`).emit('voice-state-update', stateUpdate);
+        }
+
+        console.log(`✅ Voice state updated for ${socket.user.username} in session ${sessionId}:`, updates);
+
+      } catch (error) {
+        console.error('Update voice state error:', error);
+        socket.emit('error', { message: 'Failed to update voice state' });
+      }
+    });
+
+    // WebRTC signaling
+    socket.on('webrtc-signal', async (data) => {
+      console.log(`📡 WEBRTC-SIGNAL event received from ${socket.user.username}:`, data);
+      try {
+        const { sessionId, targetUserId, signal, type } = data;
+
+        if (!sessionId || !targetUserId || !signal || !type) {
+          socket.emit('error', { message: 'Session ID, target user ID, signal, and type are required' });
+          return;
+        }
+
+        // Send signal to target user
+        io.to(`user:${targetUserId}`).emit('webrtc-signal', {
+          sessionId: sessionId,
+          type: type,
+          signal: signal,
+          fromUserId: socket.userId,
+          fromUsername: socket.user.username,
+          timestamp: new Date()
+        });
+
+        console.log(`✅ WebRTC signal sent: ${type} from ${socket.userId} to ${targetUserId}`);
+
+      } catch (error) {
+        console.error('WebRTC signaling error:', error);
+        socket.emit('error', { message: 'Failed to send WebRTC signal' });
+      }
+    });
+
+    // DM Call Events
+    socket.on('initiate-dm-call', async (data) => {
+      console.log(`📞 INITIATE-DM-CALL event received from ${socket.user.username}:`, data);
+      try {
+        const { recipientId, isVideoCall = false } = data;
+
+        if (!recipientId) {
+          socket.emit('error', { message: 'Recipient ID is required' });
+          return;
+        }
+
+        await connectDB();
+        const VoiceSession = require('./models/VoiceSession');
+
+        // Check for existing active call
+        const existingSession = await VoiceSession.findOne({
+          type: 'dm',
+          participants: { $all: [socket.userId, recipientId] },
+          isActive: true
+        });
+
+        if (existingSession) {
+          socket.emit('error', { message: 'There is already an active call with this user' });
+          return;
+        }
+
+        // Create new DM call session
+        const session = new VoiceSession({
+          sessionId: `dm_call_${socket.userId}_${recipientId}_${Date.now()}`,
+          type: 'dm',
+          participants: [socket.userId, recipientId],
+          createdBy: socket.userId,
+          activeUsers: []
+        });
+
+        await session.save();
+
+        // Notify recipient
+        io.to(`user:${recipientId}`).emit('dm-call-incoming', {
+          sessionId: session.sessionId,
+          caller: {
+            id: socket.userId,
+            username: socket.user.username,
+            avatar: socket.user.avatar
+          },
+          isVideoCall: isVideoCall,
+          timestamp: new Date()
+        });
+
+        // Confirm to caller
+        socket.emit('dm-call-initiated', {
+          sessionId: session.sessionId,
+          recipientId: recipientId,
+          isVideoCall: isVideoCall
+        });
+
+        console.log(`✅ DM call initiated: ${socket.user.username} calling ${recipientId} (Video: ${isVideoCall})`);
+
+      } catch (error) {
+        console.error('Initiate DM call error:', error);
+        socket.emit('error', { message: 'Failed to initiate DM call' });
+      }
+    });
+
+    // Accept DM call
+    socket.on('accept-dm-call', async (data) => {
+      console.log(`📞 ACCEPT-DM-CALL event received from ${socket.user.username}:`, data);
+      try {
+        const { sessionId, peerId } = data;
+
+        if (!sessionId || !peerId) {
+          socket.emit('error', { message: 'Session ID and Peer ID are required' });
+          return;
+        }
+
+        await connectDB();
+        const VoiceSession = require('./models/VoiceSession');
+
+        const session = await VoiceSession.findOne({ sessionId });
+        if (!session) {
+          socket.emit('error', { message: 'DM call session not found' });
+          return;
+        }
+
+        // Add user to session
+        await session.addUser(socket.userId, socket.id, peerId);
+        
+        // Join voice room
+        socket.join(`voice:${sessionId}`);
+
+        // Notify caller
+        const callerId = session.participants.find(p => p.toString() !== socket.userId);
+        io.to(`user:${callerId}`).emit('dm-call-accepted', {
+          sessionId: sessionId,
+          accepter: {
+            id: socket.userId,
+            username: socket.user.username,
+            avatar: socket.user.avatar
+          },
+          timestamp: new Date()
+        });
+
+        console.log(`✅ DM call accepted: ${socket.user.username} accepted call ${sessionId}`);
+
+      } catch (error) {
+        console.error('Accept DM call error:', error);
+        socket.emit('error', { message: 'Failed to accept DM call' });
+      }
+    });
+
+    // Decline DM call
+    socket.on('decline-dm-call', async (data) => {
+      console.log(`📞 DECLINE-DM-CALL event received from ${socket.user.username}:`, data);
+      try {
+        const { sessionId } = data;
+
+        if (!sessionId) {
+          socket.emit('error', { message: 'Session ID is required' });
+          return;
+        }
+
+        await connectDB();
+        const VoiceSession = require('./models/VoiceSession');
+
+        const session = await VoiceSession.findOne({ sessionId });
+        if (!session) {
+          socket.emit('error', { message: 'DM call session not found' });
+          return;
+        }
+
+        // End session
+        session.isActive = false;
+        session.endedAt = new Date();
+        await session.save();
+
+        // Notify caller
+        const callerId = session.participants.find(p => p.toString() !== socket.userId);
+        io.to(`user:${callerId}`).emit('dm-call-declined', {
+          sessionId: sessionId,
+          decliner: {
+            id: socket.userId,
+            username: socket.user.username,
+            avatar: socket.user.avatar
+          },
+          timestamp: new Date()
+        });
+
+        console.log(`✅ DM call declined: ${socket.user.username} declined call ${sessionId}`);
+
+      } catch (error) {
+        console.error('Decline DM call error:', error);
+        socket.emit('error', { message: 'Failed to decline DM call' });
+      }
+    });
+
+    // End DM call
+    socket.on('end-dm-call', async (data) => {
+      console.log(`📞 END-DM-CALL event received from ${socket.user.username}:`, data);
+      try {
+        const { sessionId } = data;
+
+        if (!sessionId) {
+          socket.emit('error', { message: 'Session ID is required' });
+          return;
+        }
+
+        await connectDB();
+        const VoiceSession = require('./models/VoiceSession');
+
+        const session = await VoiceSession.findOne({ sessionId });
+        if (!session) {
+          socket.emit('error', { message: 'DM call session not found' });
+          return;
+        }
+
+        // Remove user and end session if empty
+        await session.removeUser(socket.userId);
+        
+        // Leave voice room
+        socket.leave(`voice:${sessionId}`);
+
+        // Notify other participant
+        const otherParticipant = session.participants.find(p => p.toString() !== socket.userId);
+        if (otherParticipant) {
+          io.to(`user:${otherParticipant}`).emit('dm-call-ended', {
+            sessionId: sessionId,
+            endedBy: {
+              id: socket.userId,
+              username: socket.user.username,
+              avatar: socket.user.avatar
+            },
+            timestamp: new Date()
+          });
+        }
+
+        console.log(`✅ DM call ended: ${socket.user.username} ended call ${sessionId}`);
+
+      } catch (error) {
+        console.error('End DM call error:', error);
+        socket.emit('error', { message: 'Failed to end DM call' });
+      }
+    });
+
+    console.log('✅ All voice/video event handlers registered');
+
+    // Helper function to clean up voice sessions on disconnect
+    async function handleVoiceDisconnect(userId) {
+      try {
+        await connectDB();
+        const VoiceSession = require('./models/VoiceSession');
+
+        // Find all active sessions with this user
+        const sessions = await VoiceSession.find({
+          'activeUsers.user': userId,
+          isActive: true
+        });
+
+        for (const session of sessions) {
+          await session.removeUser(userId);
+          
+          // Notify other participants
+          if (session.type === 'channel') {
+            io.to(`server:${session.server}`).emit('voice-user-left', {
+              sessionId: session.sessionId,
+              channelId: session.channel,
+              userId: userId,
+              timestamp: new Date()
+            });
+          } else if (session.type === 'dm') {
+            session.participants.forEach(participantId => {
+              if (participantId.toString() !== userId) {
+                io.to(`user:${participantId}`).emit('dm-call-ended', {
+                  sessionId: session.sessionId,
+                  endedBy: { id: userId },
+                  reason: 'disconnect',
+                  timestamp: new Date()
+                });
+              }
+            });
+          }
+        }
+
+        console.log(`✅ Voice session cleanup completed for user ${userId}`);
+
+      } catch (error) {
+        console.error('Voice disconnect cleanup error:', error);
+      }
+    }
     
     console.log('✅ All event handlers registered successfully');
   });
 
   return io;
 };
+
+// Helper function to clean up voice sessions on disconnect
+async function handleVoiceDisconnect(userId, ioInstance) {
+  try {
+    await connectDB();
+    const VoiceSession = require('./models/VoiceSession');
+
+    // Find all active sessions with this user
+    const sessions = await VoiceSession.find({
+      'activeUsers.user': userId,
+      isActive: true
+    });
+
+    for (const session of sessions) {
+      await session.removeUser(userId);
+      
+      // Notify other participants
+      if (session.type === 'channel') {
+        ioInstance.to(`server:${session.server}`).emit('voice-user-left', {
+          sessionId: session.sessionId,
+          channelId: session.channel,
+          userId: userId,
+          timestamp: new Date()
+        });
+      } else if (session.type === 'dm') {
+        session.participants.forEach(participantId => {
+          if (participantId.toString() !== userId) {
+            ioInstance.to(`user:${participantId}`).emit('dm-call-ended', {
+              sessionId: session.sessionId,
+              endedBy: { id: userId },
+              reason: 'disconnect',
+              timestamp: new Date()
+            });
+          }
+        });
+      }
+    }
+
+    console.log(`✅ Voice session cleanup completed for user ${userId}`);
+
+  } catch (error) {
+    console.error('Voice disconnect cleanup error:', error);
+  }
+}
 
 const getIO = () => {
   // Try to get from global first (Next.js API routes)
@@ -930,4 +1451,4 @@ const getIO = () => {
   return io;
 };
 
-module.exports = { initSocket, getIO };
+module.exports = { initSocket, getIO, handleVoiceDisconnect };
