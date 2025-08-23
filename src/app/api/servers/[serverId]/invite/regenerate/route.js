@@ -1,6 +1,7 @@
 const Server = require('../../../../../../models/Server');
 const { verifyToken, extractTokenFromHeader } = require('../../../../../../lib/jwt');
 const connectDB = require('../../../../../../lib/mongodb');
+const { getIO } = require('../../../../../../socket');
 
 // POST - Generate a new invite code for the server
 export async function POST(request, { params }) {
@@ -61,6 +62,34 @@ export async function POST(request, { params }) {
     const oldInviteCode = server.inviteCode;
     server.inviteCode = newInviteCode;
     await server.save();
+
+    // Emit real-time invite regenerated notification
+    try {
+      const io = getIO();
+      if (io) {
+        // Notify all server members about invite regeneration
+        io.to(`server:${serverId}`).emit('invite-regenerated', {
+          server: {
+            id: server._id,
+            name: server.name,
+            icon: server.icon
+          },
+          oldInviteCode: oldInviteCode,
+          newInviteCode: newInviteCode,
+          regeneratedBy: {
+            id: decoded.userId
+          },
+          message: `Server invite code was regenerated`,
+          timestamp: new Date()
+        });
+
+        console.log(`✅ Invite regeneration notification sent for server:${serverId}`);
+      } else {
+        console.log(`⚠️ Socket.io not initialized, invite regeneration notification not sent`);
+      }
+    } catch (socketError) {
+      console.error('Socket emission error:', socketError);
+    }
 
     return Response.json({
       success: true,

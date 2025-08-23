@@ -2,6 +2,7 @@ const Server = require('../../../../../../../models/Server');
 const User = require('../../../../../../../models/User');
 const { verifyToken, extractTokenFromHeader } = require('../../../../../../../lib/jwt');
 const connectDB = require('../../../../../../../lib/mongodb');
+const { getIO } = require('../../../../../../../socket');
 
 // POST - Kick a member from the server
 export async function POST(request, { params }) {
@@ -120,6 +121,54 @@ export async function POST(request, { params }) {
     await User.findByIdAndUpdate(userId, {
       $pull: { servers: serverId }
     });
+
+    // Emit real-time kick notifications
+    try {
+      const io = getIO();
+      if (io) {
+        // Notify the kicked user
+        io.to(`user:${userId}`).emit('kicked-from-server', {
+          server: {
+            id: server._id,
+            name: server.name,
+            icon: server.icon
+          },
+          kickedBy: {
+            id: decoded.userId,
+            username: requestingMember.user.username
+          },
+          reason: reason || 'No reason provided',
+          message: `You have been kicked from ${server.name}`,
+          timestamp: new Date()
+        });
+
+        // Notify all server members about the kick
+        io.to(`server:${serverId}`).emit('member-kicked', {
+          member: {
+            id: targetMember.user._id,
+            username: targetMember.user.username,
+            avatar: targetMember.user.avatar
+          },
+          kickedBy: {
+            id: decoded.userId,
+            username: requestingMember.user.username
+          },
+          reason: reason || 'No reason provided',
+          server: {
+            id: server._id,
+            name: server.name
+          },
+          message: `${targetMember.user.username} was kicked from the server`,
+          timestamp: new Date()
+        });
+
+        console.log(`✅ Kick notifications sent for user:${userId} from server:${serverId}`);
+      } else {
+        console.log(`⚠️ Socket.io not initialized, kick notifications not sent`);
+      }
+    } catch (socketError) {
+      console.error('Socket emission error:', socketError);
+    }
 
     // Create audit log entry (for future implementation)
     const auditLog = {

@@ -1,6 +1,7 @@
 const Server = require('../../../../../../../models/Server');
 const { verifyToken, extractTokenFromHeader } = require('../../../../../../../lib/jwt');
 const connectDB = require('../../../../../../../lib/mongodb');
+const { getIO } = require('../../../../../../../socket');
 
 // POST - Issue a warning to a member
 export async function POST(request, { params }) {
@@ -140,6 +141,62 @@ export async function POST(request, { params }) {
 
     // Get warning count for this user
     const userWarnings = server.warnings.filter(w => w.user.toString() === userId);
+
+    // Emit real-time warning notification
+    try {
+      const io = getIO();
+      if (io) {
+        // Notify the warned user
+        io.to(`user:${userId}`).emit('warning-received', {
+          warning: {
+            id: warning.id,
+            reason: reason.trim(),
+            warnedAt: warning.warnedAt,
+            warningCount: userWarnings.length
+          },
+          server: {
+            id: server._id,
+            name: server.name,
+            icon: server.icon
+          },
+          warnedBy: {
+            id: decoded.userId,
+            username: requestingMember.user.username
+          },
+          message: `You received a warning in ${server.name}`,
+          timestamp: new Date()
+        });
+
+        // Optionally notify moderators about the warning (if they have permission)
+        io.to(`server:${serverId}`).emit('member-warned', {
+          member: {
+            id: targetMember.user._id,
+            username: targetMember.user.username,
+            avatar: targetMember.user.avatar
+          },
+          warning: {
+            id: warning.id,
+            reason: reason.trim(),
+            warningCount: userWarnings.length
+          },
+          warnedBy: {
+            id: decoded.userId,
+            username: requestingMember.user.username
+          },
+          server: {
+            id: server._id,
+            name: server.name
+          },
+          timestamp: new Date()
+        });
+
+        console.log(`✅ Warning notifications sent for user:${userId} in server:${serverId}`);
+      } else {
+        console.log(`⚠️ Socket.io not initialized, warning notifications not sent`);
+      }
+    } catch (socketError) {
+      console.error('Socket emission error:', socketError);
+    }
 
     // Create audit log entry
     const auditLog = {

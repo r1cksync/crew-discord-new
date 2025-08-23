@@ -1,6 +1,7 @@
 const Server = require('../../../../../models/Server');
 const { verifyToken, extractTokenFromHeader } = require('../../../../../lib/jwt');
 const connectDB = require('../../../../../lib/mongodb');
+const { getIO } = require('../../../../../socket');
 
 // GET - Get current invite code for a server
 export async function GET(request, { params }) {

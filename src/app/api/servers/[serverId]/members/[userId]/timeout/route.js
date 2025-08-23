@@ -1,6 +1,7 @@
 const Server = require('../../../../../../../models/Server');
 const { verifyToken, extractTokenFromHeader } = require('../../../../../../../lib/jwt');
 const connectDB = require('../../../../../../../lib/mongodb');
+const { getIO } = require('../../../../../../../socket');
 
 // POST - Timeout/mute a member temporarily
 export async function POST(request, { params }) {
@@ -140,6 +141,61 @@ export async function POST(request, { params }) {
     });
 
     await server.save();
+
+    // Emit real-time timeout notification
+    try {
+      const io = getIO();
+      if (io) {
+        // Notify the timed out user
+        io.to(`user:${userId}`).emit('timeout-applied', {
+          timeout: {
+            duration: duration,
+            timeoutUntil: timeoutUntil,
+            reason: reason || 'No reason provided'
+          },
+          server: {
+            id: server._id,
+            name: server.name,
+            icon: server.icon
+          },
+          timeoutBy: {
+            id: decoded.userId,
+            username: requestingMember.user.username
+          },
+          message: `You have been timed out in ${server.name} for ${duration} minutes`,
+          timestamp: new Date()
+        });
+
+        // Notify server moderators about the timeout
+        io.to(`server:${serverId}`).emit('member-timeout', {
+          member: {
+            id: targetMember.user._id,
+            username: targetMember.user.username,
+            avatar: targetMember.user.avatar
+          },
+          timeout: {
+            duration: duration,
+            timeoutUntil: timeoutUntil,
+            reason: reason || 'No reason provided'
+          },
+          timeoutBy: {
+            id: decoded.userId,
+            username: requestingMember.user.username
+          },
+          server: {
+            id: server._id,
+            name: server.name
+          },
+          timestamp: new Date()
+        });
+
+        console.log(`✅ Timeout notifications sent for user:${userId} in server:${serverId}`);
+      } else {
+        console.log(`⚠️ Socket.io not initialized, timeout notifications not sent`);
+      }
+    } catch (socketError) {
+      console.error('Socket emission error:', socketError);
+    }
 
     // Create audit log entry
     const auditLog = {

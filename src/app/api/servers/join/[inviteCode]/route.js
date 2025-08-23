@@ -2,6 +2,7 @@ const Server = require('../../../../../models/Server');
 const User = require('../../../../../models/User');
 const { verifyToken, extractTokenFromHeader } = require('../../../../../lib/jwt');
 const connectDB = require('../../../../../lib/mongodb');
+const { getIO } = require('../../../../../socket');
 
 // POST - Join a server by invite code
 export async function POST(request, { params }) {
@@ -53,6 +54,18 @@ export async function POST(request, { params }) {
       );
     }
 
+    // Check if user is banned from this server
+    const isBanned = server.bannedUsers && server.bannedUsers.some(ban => 
+      ban.user.toString() === decoded.userId
+    );
+
+    if (isBanned) {
+      return Response.json(
+        { error: 'You are banned from this server' },
+        { status: 403 }
+      );
+    }
+
     // Add user to server members
     server.members.push({
       user: decoded.userId,
@@ -66,6 +79,71 @@ export async function POST(request, { params }) {
     await User.findByIdAndUpdate(decoded.userId, {
       $push: { servers: server._id }
     });
+
+    // Get user details for notifications
+    const joiningUser = await User.findById(decoded.userId).select('username avatar status');
+
+    // Emit real-time notifications
+    try {
+      const io = getIO();
+      if (io) {
+        // Notify all server members about new member
+        io.to(`server:${server._id}`).emit('member-joined', {
+          member: {
+            user: {
+              id: joiningUser._id,
+              username: joiningUser.username,
+              avatar: joiningUser.avatar,
+              status: joiningUser.status
+            },
+            roles: [],
+            joinedAt: new Date()
+          },
+          server: {
+            id: server._id,
+            name: server.name
+          },
+          message: `${joiningUser.username} joined the server!`
+        });
+
+        // Notify the joining user
+        io.to(`user:${decoded.userId}`).emit('server-joined', {
+          server: {
+            id: server._id,
+            name: server.name,
+            description: server.description,
+            icon: server.icon,
+            memberCount: server.members.length
+          },
+          message: `Successfully joined ${server.name}!`
+        });
+
+        // Notify server owner about invite usage
+        io.to(`user:${server.owner}`).emit('invite-used', {
+          invite: {
+            code: inviteCode,
+            usedBy: {
+              id: joiningUser._id,
+              username: joiningUser.username,
+              avatar: joiningUser.avatar
+            }
+          },
+          server: {
+            id: server._id,
+            name: server.name,
+            memberCount: server.members.length
+          },
+          message: `${joiningUser.username} joined ${server.name} using an invite`,
+          timestamp: new Date()
+        });
+
+        console.log(`✅ Server join notifications sent for user:${decoded.userId} joining server:${server._id}`);
+      } else {
+        console.log(`⚠️ Socket.io not initialized, server join notifications not sent`);
+      }
+    } catch (socketError) {
+      console.error('Socket emission error:', socketError);
+    }
 
     return Response.json({
       success: true,

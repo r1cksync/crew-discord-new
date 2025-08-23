@@ -54,6 +54,13 @@ const directMessageContentSchema = new mongoose.Schema({
   deleted: {
     type: Boolean,
     default: false
+  },
+  read: {
+    type: Boolean,
+    default: false
+  },
+  readAt: {
+    type: Date
   }
 }, {
   timestamps: true
@@ -62,4 +69,7 @@ const directMessageContentSchema = new mongoose.Schema({
 const DirectMessageConversation = mongoose.models.DirectMessageConversation || mongoose.model('DirectMessageConversation', directMessageSchema);
 const DirectMessage = mongoose.models.DirectMessage || mongoose.model('DirectMessage', directMessageContentSchema);
 
-module.exports = { DirectMessageConversation, DirectMessage };
+// Export both ways for compatibility
+module.exports = DirectMessage; // Default export for API routes
+module.exports.DirectMessageConversation = DirectMessageConversation;
+module.exports.DirectMessage = DirectMessage;

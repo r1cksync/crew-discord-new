@@ -2,6 +2,7 @@ const Channel = require('../../../models/Channel');
 const Server = require('../../../models/Server');
 const { verifyToken, extractTokenFromHeader } = require('../../../lib/jwt');
 const connectDB = require('../../../lib/mongodb');
+const { getIO } = require('../../../socket');
 
 // GET - Get channel details
 export async function GET(request, { params }) {
@@ -116,6 +117,37 @@ export async function PUT(request, { params }) {
 
     await channel.save();
 
+    // Emit real-time channel update notification
+    try {
+      const io = getIO();
+      if (io) {
+        // Notify all server members about channel update
+        io.to(`server:${channel.server}`).emit('channel-updated', {
+          channel: {
+            id: channel._id,
+            name: channel.name,
+            description: channel.description,
+            topic: channel.topic,
+            type: channel.type
+          },
+          server: {
+            id: channel.server
+          },
+          updatedBy: {
+            id: decoded.userId
+          },
+          message: `Channel #${channel.name} was updated`,
+          timestamp: new Date()
+        });
+
+        console.log(`✅ Channel update notification sent for channel:${channelId}`);
+      } else {
+        console.log(`⚠️ Socket.io not initialized, channel update notification not sent`);
+      }
+    } catch (socketError) {
+      console.error('Socket emission error:', socketError);
+    }
+
     return Response.json({
       success: true,
       message: 'Channel updated successfully',
@@ -180,6 +212,32 @@ export async function DELETE(request, { params }) {
 
     // Delete the channel
     await Channel.findByIdAndDelete(channelId);
+
+    // Emit real-time channel deletion notification
+    try {
+      const io = getIO();
+      if (io) {
+        // Notify all server members about channel deletion
+        io.to(`server:${channel.server}`).emit('channel-deleted', {
+          channelId: channelId,
+          channelName: channel.name,
+          server: {
+            id: channel.server
+          },
+          deletedBy: {
+            id: decoded.userId
+          },
+          message: `Channel #${channel.name} was deleted`,
+          timestamp: new Date()
+        });
+
+        console.log(`✅ Channel deletion notification sent for channel:${channelId}`);
+      } else {
+        console.log(`⚠️ Socket.io not initialized, channel deletion notification not sent`);
+      }
+    } catch (socketError) {
+      console.error('Socket emission error:', socketError);
+    }
 
     return Response.json({
       success: true,

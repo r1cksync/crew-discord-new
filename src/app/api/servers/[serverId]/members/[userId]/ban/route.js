@@ -2,6 +2,7 @@ const Server = require('../../../../../../../models/Server');
 const User = require('../../../../../../../models/User');
 const { verifyToken, extractTokenFromHeader } = require('../../../../../../../lib/jwt');
 const connectDB = require('../../../../../../../lib/mongodb');
+const { getIO } = require('../../../../../../../socket');
 
 // POST - Ban a member from the server
 export async function POST(request, { params }) {
@@ -147,6 +148,57 @@ export async function POST(request, { params }) {
 
     await server.save();
 
+    // Get target user details for notification (already have targetUser from above)
+    const targetUserDetails = await User.findById(userId).select('username avatar');
+
+    // Emit real-time ban notifications
+    try {
+      const io = getIO();
+      if (io) {
+        // Notify the banned user
+        io.to(`user:${userId}`).emit('banned-from-server', {
+          server: {
+            id: server._id,
+            name: server.name,
+            icon: server.icon
+          },
+          bannedBy: {
+            id: decoded.userId,
+            username: requestingMember.user.username
+          },
+          reason: reason || 'No reason provided',
+          message: `You have been banned from ${server.name}`,
+          timestamp: new Date()
+        });
+
+        // Notify all server members about the ban
+        io.to(`server:${serverId}`).emit('member-banned', {
+          member: {
+            id: targetUserDetails._id,
+            username: targetUserDetails.username,
+            avatar: targetUserDetails.avatar
+          },
+          bannedBy: {
+            id: decoded.userId,
+            username: requestingMember.user.username
+          },
+          reason: reason || 'No reason provided',
+          server: {
+            id: server._id,
+            name: server.name
+          },
+          message: `${targetUserDetails.username} was banned from the server`,
+          timestamp: new Date()
+        });
+
+        console.log(`✅ Ban notifications sent for user:${userId} from server:${serverId}`);
+      } else {
+        console.log(`⚠️ Socket.io not initialized, ban notifications not sent`);
+      }
+    } catch (socketError) {
+      console.error('Socket emission error:', socketError);
+    }
+
     // TODO: Delete messages if deleteMessageDays > 0
     // This would require implementing message deletion based on time range
 
@@ -164,9 +216,9 @@ export async function POST(request, { params }) {
       success: true,
       message: 'Member banned successfully',
       bannedUser: {
-        id: targetUser._id,
-        username: targetUser.username,
-        avatar: targetUser.avatar
+        id: targetUserDetails._id,
+        username: targetUserDetails.username,
+        avatar: targetUserDetails.avatar
       },
       reason: reason || 'No reason provided',
       deleteMessageDays,

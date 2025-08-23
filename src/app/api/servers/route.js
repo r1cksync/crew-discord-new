@@ -4,6 +4,7 @@ const Role = require('../../../models/Role');
 const User = require('../../../models/User');
 const { verifyToken, extractTokenFromHeader } = require('../../../lib/jwt');
 const connectDB = require('../../../lib/mongodb');
+const { getIO } = require('../../../socket');
 
 // GET - Get all servers for a user
 export async function GET(request) {
@@ -166,6 +167,24 @@ export async function POST(request) {
       .populate('channels')
       .populate('roles')
       .populate('members.user', 'username avatar status isOnline');
+
+    // Emit real-time server creation notification
+    try {
+      const io = getIO();
+      if (io) {
+        // Notify the creator that server was created successfully
+        io.to(`user:${decoded.userId}`).emit('server-created', {
+          server: populatedServer,
+          message: `Server "${populatedServer.name}" created successfully!`
+        });
+
+        console.log(`✅ Server creation notification sent to user:${decoded.userId}`);
+      } else {
+        console.log(`⚠️ Socket.io not initialized, server creation notification not sent`);
+      }
+    } catch (socketError) {
+      console.error('Socket emission error:', socketError);
+    }
 
     return Response.json({
       success: true,

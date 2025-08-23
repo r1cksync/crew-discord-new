@@ -1,6 +1,7 @@
 import User from '../../../../../models/User';
 import { verifyToken, extractTokenFromHeader } from '../../../../../lib/jwt';
 import connectDB from '../../../../../lib/mongodb';
+import { getIO } from '../../../../../socket';
 
 // POST - Block a user
 export async function POST(request, { params }) {
@@ -85,6 +86,40 @@ export async function POST(request, { params }) {
     await user.save();
     await targetUser.save();
 
+    // Emit real-time blocking notification
+    try {
+      const io = getIO();
+      if (io) {
+        // Notify the blocked user
+        io.to(`user:${userId}`).emit('blocked-by-user', {
+          blocker: {
+            id: user._id,
+            username: user.username,
+            avatar: user.avatar
+          },
+          message: `You have been blocked by ${user.username}`,
+          timestamp: new Date()
+        });
+
+        // Notify the blocking user for confirmation
+        io.to(`user:${decoded.userId}`).emit('user-blocked', {
+          blockedUser: {
+            id: targetUser._id,
+            username: targetUser.username,
+            avatar: targetUser.avatar
+          },
+          message: `You have blocked ${targetUser.username}`,
+          timestamp: new Date()
+        });
+
+        console.log(`✅ Block notifications sent between users ${decoded.userId} and ${userId}`);
+      } else {
+        console.log(`⚠️ Socket.io not initialized, block notifications not sent`);
+      }
+    } catch (socketError) {
+      console.error('Socket emission error:', socketError);
+    }
+
     return Response.json({
       success: true,
       message: 'User blocked successfully',
@@ -159,6 +194,40 @@ export async function DELETE(request, { params }) {
 
     // Get target user info for response
     const targetUser = await User.findById(userId).select('username avatar');
+
+    // Emit real-time unblocking notification
+    try {
+      const io = getIO();
+      if (io) {
+        // Notify the unblocked user
+        io.to(`user:${userId}`).emit('unblocked-by-user', {
+          unblocker: {
+            id: user._id,
+            username: user.username,
+            avatar: user.avatar
+          },
+          message: `You have been unblocked by ${user.username}`,
+          timestamp: new Date()
+        });
+
+        // Notify the unblocking user for confirmation
+        io.to(`user:${decoded.userId}`).emit('user-unblocked', {
+          unblockedUser: {
+            id: targetUser._id,
+            username: targetUser.username,
+            avatar: targetUser.avatar
+          },
+          message: `You have unblocked ${targetUser.username}`,
+          timestamp: new Date()
+        });
+
+        console.log(`✅ Unblock notifications sent between users ${decoded.userId} and ${userId}`);
+      } else {
+        console.log(`⚠️ Socket.io not initialized, unblock notifications not sent`);
+      }
+    } catch (socketError) {
+      console.error('Socket emission error:', socketError);
+    }
 
     return Response.json({
       success: true,
