@@ -1,7 +1,7 @@
 const VoiceSession = require('../../../../../models/VoiceSession');
 const { verifyToken, extractTokenFromHeader } = require('../../../../../lib/jwt');
 const connectDB = require('../../../../../lib/mongodb');
-const { getIO } = require('../../../../socket');
+const { getIO } = require('../../../../../socket');
 
 // PUT - Update voice session (mute, video, etc.)
 export async function PUT(request, { params }) {

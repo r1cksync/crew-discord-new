@@ -1,8 +1,8 @@
-const Channel = require('../../../models/Channel');
-const Server = require('../../../models/Server');
-const { verifyToken, extractTokenFromHeader } = require('../../../lib/jwt');
-const connectDB = require('../../../lib/mongodb');
-const { getIO } = require('../../../socket');
+const Channel = require('../../../../models/Channel');
+const Server = require('../../../../models/Server');
+const { verifyToken, extractTokenFromHeader } = require('../../../../lib/jwt');
+const connectDB = require('../../../../lib/mongodb');
+const { getIO } = require('../../../../socket');
 
 // GET - Get channel details
 export async function GET(request, { params }) {

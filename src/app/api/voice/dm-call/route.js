@@ -1,8 +1,8 @@
-const VoiceSession = require('../../../../../models/VoiceSession');
-const User = require('../../../../../models/User');
-const { verifyToken, extractTokenFromHeader } = require('../../../../../lib/jwt');
-const connectDB = require('../../../../../lib/mongodb');
-const { getIO } = require('../../../socket');
+const VoiceSession = require('../../../../models/VoiceSession');
+const User = require('../../../../models/User');
+const { verifyToken, extractTokenFromHeader } = require('../../../../lib/jwt');
+const connectDB = require('../../../../lib/mongodb');
+const { getIO } = require('../../../../socket');
 
 // POST - Initiate a DM call
 export async function POST(request) {
