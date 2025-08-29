@@ -1,4 +1,5 @@
 const DirectMessage = require('../../../models/DirectMessage');
+const { DirectMessageConversation } = require('../../../models/DirectMessage');
 const User = require('../../../models/User');
 const { verifyToken, extractTokenFromHeader } = require('../../../lib/jwt');
 const connectDB = require('../../../lib/mongodb');
@@ -46,15 +47,26 @@ export async function GET(request) {
       );
     }
 
-    // Get direct messages between these two users
+    // Find or create conversation between these two users
+    let conversation = await DirectMessageConversation.findOne({
+      participants: { $all: [decoded.userId, recipientId] }
+    });
+
+    if (!conversation) {
+      // No conversation exists yet, return empty messages
+      return Response.json({
+        success: true,
+        messages: [],
+        recipient: recipient,
+        count: 0
+      });
+    }
+
+    // Get messages for this conversation
     const messages = await DirectMessage.find({
-      $or: [
-        { sender: decoded.userId, recipient: recipientId },
-        { sender: recipientId, recipient: decoded.userId }
-      ]
+      conversation: conversation._id
     })
-    .populate('sender', 'username avatar status')
-    .populate('recipient', 'username avatar status')
+    .populate('author', 'username avatar status')
     .sort({ createdAt: 1 })
     .limit(50); // Limit to last 50 messages
 
@@ -130,18 +142,35 @@ export async function POST(request) {
     // Get sender details
     const sender = await User.findById(decoded.userId).select('username avatar');
 
+    // Find or create conversation between these two users
+    let conversation = await DirectMessageConversation.findOne({
+      participants: { $all: [decoded.userId, recipientId] }
+    });
+
+    if (!conversation) {
+      conversation = new DirectMessageConversation({
+        participants: [decoded.userId, recipientId],
+        lastActivity: new Date()
+      });
+      await conversation.save();
+    }
+
     // Create direct message
     const directMessage = new DirectMessage({
       content: content.trim(),
-      sender: decoded.userId,
-      recipient: recipientId
+      author: decoded.userId,
+      conversation: conversation._id
     });
 
     await directMessage.save();
 
-    // Populate the message with sender and recipient details
-    await directMessage.populate('sender', 'username avatar status');
-    await directMessage.populate('recipient', 'username avatar status');
+    // Update conversation's last message and activity
+    conversation.lastMessage = directMessage._id;
+    conversation.lastActivity = new Date();
+    await conversation.save();
+
+    // Populate the message with author details
+    await directMessage.populate('author', 'username avatar status');
 
     // Emit real-time direct message notifications
     try {
@@ -152,8 +181,8 @@ export async function POST(request) {
           message: {
             id: directMessage._id,
             content: directMessage.content,
-            sender: directMessage.sender,
-            recipient: directMessage.recipient,
+            author: directMessage.author,
+            conversation: directMessage.conversation,
             createdAt: directMessage.createdAt,
             edited: directMessage.edited
           },
@@ -171,8 +200,8 @@ export async function POST(request) {
           message: {
             id: directMessage._id,
             content: directMessage.content,
-            sender: directMessage.sender,
-            recipient: directMessage.recipient,
+            author: directMessage.author,
+            conversation: directMessage.conversation,
             createdAt: directMessage.createdAt,
             edited: directMessage.edited
           },
@@ -198,8 +227,8 @@ export async function POST(request) {
       directMessage: {
         id: directMessage._id,
         content: directMessage.content,
-        sender: directMessage.sender,
-        recipient: directMessage.recipient,
+        author: directMessage.author,
+        conversation: directMessage.conversation,
         createdAt: directMessage.createdAt,
         edited: directMessage.edited
       }

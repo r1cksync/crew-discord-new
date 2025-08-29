@@ -6,15 +6,17 @@ A comprehensive Discord clone backend built with Next.js, Socket.io, MongoDB, an
 
 ### 💬 **COMPLETE DIRECT MESSAGING SYSTEM** - 100% WORKING!
 - **Real-time DM Functionality**: Full Socket.io implementation with instant messaging
-- **DM Conversations**: Persistent conversation threads between users
-- **Message Persistence**: All DMs stored in MongoDB with proper relationships
+- **DM Conversations Listing**: NEW `/api/direct-messages/conversations` endpoint to list all conversation contacts
+- **DM Conversations**: Persistent conversation threads between users with proper database relationships
+- **Message Persistence**: All DMs stored in MongoDB with conversation-based schema
 - **Real-time Events**: `dm-received`, `dm-sent`, `dm-user-typing`, `dm-user-stopped-typing`
 - **Read Status Tracking**: Mark messages as read with `mark-dm-read` event
 - **Message Editing**: Edit DMs with `edit-dm` event and real-time updates
 - **Message Deletion**: Delete DMs with `delete-dm` event and real-time sync
 - **Block System Integration**: Blocked users cannot send DMs
 - **Typing Indicators**: Real-time typing notifications for DM conversations
-- **Comprehensive Testing**: 100% test success rate with both users connected
+- **Conversation Management**: Automatic conversation creation and last message tracking
+- **Comprehensive Testing**: 100% test success rate with comprehensive DM routes testing
 
 ### 🎤📹 **COMPLETE VOICE & VIDEO SYSTEM** - DISCORD-LIKE IMPLEMENTATION!
 - **Voice Channels**: Full voice channel functionality with real-time joining/leaving
@@ -1022,15 +1024,39 @@ Authorization: Bearer <token>
 
 ### Direct Message Endpoints
 
-#### GET `/api/dm`
-Get all direct message conversations.
+#### GET `/api/direct-messages/conversations`
+Get all DM conversations for the authenticated user.
 
 **Headers:**
 ```
 Authorization: Bearer <token>
 ```
 
-#### GET `/api/dm/[userId]`
+**Response:**
+```json
+{
+  "success": true,
+  "conversations": [
+    {
+      "conversationId": "64f8b456...",
+      "user": {
+        "_id": "64f8b123...",
+        "username": "johndoe",
+        "avatar": "https://...",
+        "status": "online"
+      },
+      "lastMessage": {
+        "content": "Hey, how are you?",
+        "createdAt": "2025-08-29T10:30:00.000Z",
+        "author": "64f8b123..."
+      },
+      "lastActivity": "2025-08-29T10:30:00.000Z"
+    }
+  ]
+}
+```
+
+#### GET `/api/direct-messages?recipient=<userId>`
 Get direct messages with a specific user.
 
 **Headers:**
@@ -1038,7 +1064,38 @@ Get direct messages with a specific user.
 Authorization: Bearer <token>
 ```
 
-#### POST `/api/dm/[userId]`
+**Query Parameters:**
+- `recipient` (required): The ID of the user to get messages with
+
+**Response:**
+```json
+{
+  "success": true,
+  "messages": [
+    {
+      "_id": "64f8b789...",
+      "content": "Hello there!",
+      "author": {
+        "_id": "64f8b123...",
+        "username": "johndoe",
+        "avatar": "https://...",
+        "status": "online"
+      },
+      "conversation": "64f8b456...",
+      "createdAt": "2025-08-29T10:30:00.000Z",
+      "edited": false
+    }
+  ],
+  "recipient": {
+    "_id": "64f8b456...",
+    "username": "janedoe",
+    "avatar": "https://..."
+  },
+  "count": 1
+}
+```
+
+#### POST `/api/direct-messages`
 Send a direct message to a user.
 
 **Headers:**
@@ -1049,7 +1106,24 @@ Authorization: Bearer <token>
 **Request Body:**
 ```json
 {
-  "content": "Hello there!"
+  "content": "Hello there!",
+  "recipientId": "64f8b456..."
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Direct message sent successfully",
+  "directMessage": {
+    "id": "64f8b789...",
+    "content": "Hello there!",
+    "author": "64f8b123...",
+    "conversation": "64f8b456...",
+    "createdAt": "2025-08-29T10:30:00.000Z",
+    "edited": false
+  }
 }
 ```
 
@@ -3311,8 +3385,8 @@ io.to(`channel:${channelId}`).emit('voice-session-ended', {
 - **Channel**: Text and voice channels within servers
 - **Message**: Chat messages with attachments and reactions
 - **Role**: Permission-based roles for server members
-- **DirectMessage**: Private messages between users with file support and edit history
-- **DirectMessageConversation**: DM conversation containers with participant management and read status
+- **DirectMessage**: Individual message content within conversations with author references and conversation linking
+- **DirectMessageConversation**: DM conversation containers with participant management, last message tracking, and activity timestamps
 - **FriendRequest**: Friend request system with pending/accepted/declined states
 - **VoiceSession**: Voice and video call sessions for both server channels and DM calls with participant management and WebRTC state tracking
 
@@ -3385,6 +3459,17 @@ node test-voice-video.js
 - Tests WebRTC signal relay endpoints
 - Verifies session state management
 - Tests authorization and error handling
+
+**Direct Messages Routes Testing**
+```bash
+node test-dm-routes.js
+```
+- Tests DM conversation listing endpoint
+- Validates message sending and retrieval
+- Tests conversation-based schema functionality
+- Verifies authentication and authorization
+- Tests error handling for invalid requests
+- Validates real-time Socket.io events for DMs
 
 ### Core System Testing Scripts
 
